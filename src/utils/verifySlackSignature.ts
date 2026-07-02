@@ -11,7 +11,10 @@ export function verifySlackSignature(
 ): boolean {
   if (!timestamp || !signature) return false;
 
-  const age = Math.abs(Date.now() / 1000 - Number(timestamp));
+  const ts = Number(timestamp);
+  if (!Number.isFinite(ts)) return false;
+
+  const age = Math.abs(Date.now() / 1000 - ts);
   if (age > 300) return false; // reject requests older than 5 minutes (replay protection)
 
   const base = `v0:${timestamp}:${rawBody}`;
