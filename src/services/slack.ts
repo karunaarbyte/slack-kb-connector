@@ -3,7 +3,6 @@ import config from "../config";
 
 const client = new WebClient(config.slackBotToken);
 
-// Pulls the full thread (parent + replies) in chronological order.
 export async function fetchThread(channel: string, threadTs: string) {
   const messages: any[] = [];
   let cursor: string | undefined;
@@ -68,9 +67,6 @@ function cleanSlackLinks(text: string): string {
   );
 }
 
-// Builds a best-effort text representation of a message: its own text,
-// falling back to Block Kit content, plus file/attachment titles so the
-// summarizer at least knows something was shared even if it can't read it.
 function extractMessageText(msg: any): string {
   const parts: string[] = [];
 
@@ -97,7 +93,6 @@ function extractMessageText(msg: any): string {
   return parts.join("\n").trim();
 }
 
-// Builds "Name: message text" transcript, resolving user IDs and skipping bot/system noise.
 export async function threadToTranscript(messages: any[]): Promise<string> {
   const lines: string[] = [];
   for (const msg of messages) {
