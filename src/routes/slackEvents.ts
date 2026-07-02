@@ -27,6 +27,7 @@ router.post(
   async (req, res) => {
     const rawBody = verifySlackRequest(req);
     if (!rawBody) {
+      console.warn("kb-connector: rejected /slack/events request — invalid signature");
       return res.status(401).json({ ok: false, error: "invalid signature" });
     }
 
@@ -54,6 +55,7 @@ router.post(
     if (!threadTs || threadTs === event.ts) return;
     if (text.toLowerCase() !== TRIGGER) return;
 
+    console.log(`kb-connector: "kb!" trigger fired (channel=${channel} thread=${threadTs})`);
     await runKbSummary(channel, threadTs);
   }
 );
