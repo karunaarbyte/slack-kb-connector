@@ -11,7 +11,7 @@ const SHARED_RULES = `
 - If a reply quotes or refers back to an earlier message ("re: what Sam said above"), resolve the reference using the quoted/earlier content rather than treating the reply in isolation.
 - title: a descriptive noun phrase or imperative, not a question — e.g. "Fixing the staging DB connection timeout" or "Deploying via the new CI pipeline", not "How do we fix...?". Concise, specific, under 100 chars, no trailing punctuation.
 - body_markdown: structured with headings/bullets — Problem/Context, Discussion (only if it adds necessary nuance), Resolution/Decision. Skip sections that don't apply rather than padding them. Minimum: a real Problem/Context statement plus a real Resolution — do not return a title-only or placeholder body.
-- Preserve every link, doc, and shared file mentioned in the transcript as a markdown link — under a "References" section if there are any, so readers can follow them later.
+- Preserve every link, doc, and shared file mentioned in the transcript as a markdown link, under a "References" section. If there are none, omit the section entirely — never write a "References" heading followed by "None" or similar placeholder.
 - Attribute key decisions to the person who made them when it's clear from the transcript (e.g. "Karuna decided to roll back the deploy"), but don't force attribution where it's a group consensus.`;
 
 const SYSTEM_PROMPT = `You summarize Slack thread discussions into a knowledge-base article.
@@ -147,4 +147,83 @@ export async function evaluateThread(transcript: string): Promise<ThreadEvaluati
     title: parsed.title ?? null,
     body_markdown: parsed.body_markdown ?? null,
   };
+}
+
+const UPDATE_PROMPT = `You judge whether new Slack thread activity adds anything worth appending to an existing knowledge-base article.
+
+You'll be given the EXISTING ARTICLE CONTENT and NEW MESSAGES that occurred after the article was written.
+
+Worth adding means the new messages contain a correction to something in the existing article, a decision/resolution to something the article left open, new information that extends the existing conclusion, or a materially different follow-up development.
+Not worth adding means the new messages are off-topic chatter, restate what's already in the article, or are another open question that doesn't change the existing conclusion.
+
+Return strict JSON with keys in this order: {"reason": string, "worth_adding": boolean, "addition_markdown": string | null}.
+- reason: write this first. One or two sentences on what's new (or why nothing is) — specific, not a vague restatement.
+- worth_adding: your verdict, consistent with reason.
+- If worth_adding is true: addition_markdown is required — markdown covering ONLY what's new (do not restate the existing article), structured with a heading if useful. Preserve any new links/docs/files as markdown links; don't add a references heading at all if there aren't any.
+- If worth_adding is false: addition_markdown must be null.`;
+
+export interface UpdateEvaluation {
+  worthAdding: boolean;
+  reason: string;
+  additionMarkdown: string | null;
+}
+
+export async function evaluateUpdate(
+  previousSummary: string,
+  deltaTranscript: string
+): Promise<UpdateEvaluation> {
+  const resp = await client.chat.completions.create({
+    model: config.openaiModel,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: UPDATE_PROMPT },
+      {
+        role: "user",
+        content: `EXISTING ARTICLE CONTENT:\n${previousSummary}\n\nNEW MESSAGES:\n${deltaTranscript}`,
+      },
+    ],
+    temperature: 0.2,
+  });
+
+  const raw = resp.choices[0].message.content ?? "{}";
+  const parsed = JSON.parse(raw);
+  if (typeof parsed.worth_adding !== "boolean") {
+    throw new Error("Malformed update-evaluation response from OpenAI");
+  }
+  if (parsed.worth_adding) {
+    if (typeof parsed.addition_markdown !== "string" || parsed.addition_markdown.trim().length < 20) {
+      throw new Error("Malformed update-evaluation response from OpenAI: addition_markdown too thin");
+    }
+  }
+  return {
+    worthAdding: parsed.worth_adding,
+    reason: parsed.reason || "",
+    additionMarkdown: parsed.addition_markdown ?? null,
+  };
+}
+
+// Used on the force-override path for an already-archived thread — skips
+// the worth-adding judgment and just writes the addition directly.
+export async function writeUpdate(previousSummary: string, deltaTranscript: string): Promise<string> {
+  const resp = await client.chat.completions.create({
+    model: config.openaiModel,
+    messages: [
+      {
+        role: "system",
+        content:
+          "Write a short markdown addition to an existing knowledge-base article, covering only what's new in the following Slack messages relative to the existing article. Don't restate the existing article. Preserve any new links as markdown links; don't add a references heading at all if there aren't any.",
+      },
+      {
+        role: "user",
+        content: `EXISTING ARTICLE CONTENT:\n${previousSummary}\n\nNEW MESSAGES:\n${deltaTranscript}`,
+      },
+    ],
+    temperature: 0.2,
+  });
+
+  const text = resp.choices[0].message.content?.trim();
+  if (!text) {
+    throw new Error("Malformed update response from OpenAI: empty");
+  }
+  return text;
 }
