@@ -10,14 +10,17 @@ A Slack bot that turns thread discussions into knowledge-base articles. Point it
 - **In-thread confirmation**: replies in the same thread with a link to the new KB topic (or the saved file path).
 - **Channel scoping**: can be restricted to specific Slack channels rather than acting workspace-wide.
 - **Guards against noise**: won't generate a KB topic from a single message or an empty thread; ignores bot messages and edits.
+- **Completeness gate**: before archiving, an OpenAI call judges whether the thread is conclusive enough to be worth a KB entry. If not, it posts a notice with a "Summarize Anyway" button to force it through.
+- **Re-triggering an already-archived thread appends, not duplicates**: if a thread gets summarized again after more discussion, the connector finds the existing topic and posts just what's new as a reply — it doesn't create a second topic. A second completeness-style check judges whether the new activity is actually worth adding before posting.
 
 ## How it works
 
 1. A thread gets flagged — either the `kb!` trigger or the message shortcut — and Slack sends the request to the connector, signature-verified against the app's signing secret.
 2. The connector fetches the full thread via Slack's API and builds a transcript.
-3. The transcript goes to OpenAI, which returns a structured title + markdown body.
-4. The summary is posted as a new Discourse topic (or saved locally), with a link back to the original Slack thread.
-5. The bot replies in-thread with the result.
+3. It checks whether this thread already has a KB entry — no separate database; every entry embeds the Slack permalink, so Discourse (or `kb-summaries.md`) is searched directly. See `docs/SCALING.md` for the tradeoffs of this approach and when to revisit it.
+4. **New thread**: the transcript goes to OpenAI, which judges whether it's conclusive enough and, if so, returns a structured title + markdown body. **Already-archived thread**: only the messages since the last summary are sent, along with the existing article, and OpenAI judges whether they add anything worth appending.
+5. The result is posted as a new Discourse topic, a reply on the existing one, or saved locally — with a link back to the original Slack thread.
+6. The bot replies in-thread with the result (or, if the content isn't judged worth archiving, a button to force it through anyway).
 
 Note: this intentionally isn't a real Slack slash command. Slack blocks slash commands from being run inside a thread-reply composer, so there'd be no way to target a specific thread with one. The message shortcut is Slack's native mechanism for "act on this specific message," and it works fine from inside threads.
 
