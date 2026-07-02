@@ -1,0 +1,25 @@
+{
+  "name": "slack-kb-connector",
+  "version": "1.0.0",
+  "description": "Slack -> Discourse KB connector. Summarizes a thread and posts it as a new Discourse topic via /kb.",
+  "main": "dist/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts"
+  },
+  "dependencies": {
+    "@slack/web-api": "^7.7.0",
+    "axios": "^1.7.7",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "openai": "^4.63.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.0.0",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  }
+}
