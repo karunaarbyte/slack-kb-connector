@@ -11,7 +11,6 @@
     "delete-topics": "tsx scripts/deleteTopics.ts"
   },
   "dependencies": {
-    "@libsql/client": "^0.17.4",
     "@slack/web-api": "^7.7.0",
     "axios": "^1.7.7",
     "dotenv": "^16.4.5",
