@@ -13,5 +13,6 @@ dist/
 .yarn/install-state.gz
 
 kb-summaries.md
+data/
 
 .DS_Store
