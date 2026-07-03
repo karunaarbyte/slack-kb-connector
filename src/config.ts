@@ -26,6 +26,11 @@ export const config = {
   discourseApiKey: discourseEnabled ? required("DISCOURSE_API_KEY") : "",
   discourseApiUsername: discourseEnabled ? required("DISCOURSE_API_USERNAME") : "",
   discourseCategoryId: discourseEnabled ? Number(required("DISCOURSE_CATEGORY_ID")) : undefined,
+
+  // Maps (channel, thread_ts) -> (topic_id, last_message_ts) so re-triggers
+  // don't depend on parsing/searching Discourse post content at all.
+  tursoDatabaseUrl: discourseEnabled ? required("TURSO_DATABASE_URL") : "",
+  tursoAuthToken: discourseEnabled ? required("TURSO_AUTH_TOKEN") : "",
 };
 
 export default config;
