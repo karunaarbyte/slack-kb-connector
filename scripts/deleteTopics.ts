@@ -2,7 +2,7 @@
 import * as discourse from "../src/services/discourse";
 import * as db from "../src/services/db";
 
-// Deletes one or more Discourse topics by ID, and any Turso kb_threads row
+// Deletes one or more Discourse topics by ID, and any local kb_threads row
 // that still points at them — otherwise a later kb! trigger on that thread
 // would try to append to a topic that no longer exists. Usage:
 //   yarn delete-topics 301 302 303

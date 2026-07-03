@@ -69,7 +69,7 @@ async function run(channel: string, threadTs: string, opts: { force?: boolean })
 
     const permalink = await slack.getPermalink(channel, threadTs);
 
-    // Discourse mode: Turso (`kb_threads` table) is the source of truth for
+    // Discourse mode: the local SQLite DB (`kb_threads` table) is the source of truth for
     // "has this thread already been archived." Fallback (file) mode: the
     // local file's own embedded marker plays that role instead.
     let existing: { previousBody: string; lastMessageTs: string; topicId?: number } | null = null;
@@ -87,7 +87,7 @@ async function run(channel: string, threadTs: string, opts: { force?: boolean })
           // e.g. via the Discourse UI directly) — the mapping is stale.
           // Self-heal by dropping it and falling through to create a fresh
           // topic, rather than failing this and every future trigger on the
-          // thread until someone manually cleans up Turso.
+          // thread until someone manually cleans up the DB.
           if (!discourse.isNotFoundError(err)) throw err;
           console.warn(
             `kb-connector: mapped topic ${mapping.topicId} no longer exists, dropping stale mapping`

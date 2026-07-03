@@ -14,9 +14,9 @@ function stripHtml(text: string): string {
   return text.replace(/<[^>]+>/g, " ").trim();
 }
 
-// Identity/coverage state lives in Turso (src/services/db.ts), not in post
+// Identity/coverage state lives in a local SQLite DB (src/services/db.ts), not in post
 // content — but every post still carries this as a redundant, human-readable
-// trace. If Turso were ever lost or misconfigured, this is the only thing
+// trace. If the DB file were ever lost or misconfigured, this is the only thing
 // that would let someone reconstruct the channel/thread_ts/last_message_ts
 // mapping by hand from Discourse content alone.
 const RECOVERY_MARKER_REGEX = /<sub>kb-connector:channel=\S+ thread_ts=\S+ last_ts=[^<\s]+<\/sub>/g;
@@ -70,7 +70,7 @@ export async function createReply(
 
 // Fetches the current topic body text, used as context for the LLM when
 // evaluating/writing an update — not used for identity/lookup, that lives in
-// the Turso `kb_threads` table (see src/services/db.ts). Throws with
+// the local SQLite `kb_threads` table (see src/services/db.ts). Throws with
 // `status: 404` (via axios) if the topic no longer exists — callers use that
 // to detect a stale mapping.
 export async function getTopicBody(topicId: number): Promise<string> {
