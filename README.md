@@ -17,7 +17,7 @@ A Slack bot that turns thread discussions into knowledge-base articles. Point it
 
 1. A thread gets flagged — either the `kb!` trigger or the message shortcut — and Slack sends the request to the connector, signature-verified against the app's signing secret.
 2. The connector fetches the full thread via Slack's API and builds a transcript.
-3. It checks whether this thread already has a KB entry — no separate database; every entry embeds the Slack permalink, so Discourse (or `kb-summaries.md`) is searched directly. See `docs/SCALING.md` for the tradeoffs of this approach and when to revisit it.
+3. It checks whether this thread already has a KB entry. In Discourse mode, a Turso (SQLite) table maps `(channel, thread_ts) -> (topic_id, last_message_ts)` — a direct lookup, no searching post content. In fallback (file) mode, `kb-summaries.md` embeds its own marker per entry and is searched directly. See `docs/SCALING.md` for more on this design and its limits.
 4. **New thread**: the transcript goes to OpenAI, which judges whether it's conclusive enough and, if so, returns a structured title + markdown body. **Already-archived thread**: only the messages since the last summary are sent, along with the existing article, and OpenAI judges whether they add anything worth appending.
 5. The result is posted as a new Discourse topic, a reply on the existing one, or saved locally — with a link back to the original Slack thread.
 6. The bot replies in-thread with the result (or, if the content isn't judged worth archiving, a button to force it through anyway).
@@ -35,6 +35,7 @@ Runtime behavior is controlled via environment variables (`.env`, see `.env.exam
 | `OPENAI_API_KEY`, `OPENAI_MODEL` | Summarization model config |
 | `DISCOURSE_ENABLED` | `false` to skip Discourse and save to `kb-summaries.md` instead |
 | `DISCOURSE_BASE_URL`, `DISCOURSE_API_KEY`, `DISCOURSE_API_USERNAME`, `DISCOURSE_CATEGORY_ID` | Required when Discourse is enabled |
+| `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | Required when Discourse is enabled — stores the thread→topic mapping (see `docs/SCALING.md`). Note the auth token must be a *database*-scoped token (`turso db tokens create <db>`), not an org/platform API token |
 
 Setting up the Slack app itself (shortcuts, event subscriptions, bot scopes, request URLs) is a one-time process handled outside this repo, in your Slack app's dashboard at api.slack.com/apps.
 
@@ -80,3 +81,7 @@ Needs a public HTTPS endpoint — Slack calls in via webhook for both the thread
 - Slack retries event delivery on slow acks; the `kb!` path dedupes by `event_id` so a retry never double-posts.
 - Every incoming request is signature-verified against `SLACK_SIGNING_SECRET`.
 - Bot-authored messages and message edits/subtypes are ignored by the `kb!` trigger.
+
+## Deleting test/bad topics
+
+`yarn delete-topics <topic-id> [topic-id...]` removes a Discourse topic and its matching `kb_threads` row in Turso together — deleting only the Discourse topic would leave a stale mapping that the next `kb!` trigger would try (and fail) to append to.
