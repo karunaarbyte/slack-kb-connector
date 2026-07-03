@@ -3,6 +3,7 @@ import * as slack from "./slack";
 import { summarizeThread, evaluateThread, evaluateUpdate, writeUpdate } from "./openai";
 import * as discourse from "./discourse";
 import * as fileKb from "./fileKb";
+import * as db from "./db";
 import { withLock } from "../utils/mutex";
 
 // Action ID for the "Summarize Anyway" button, matched in slackInteractivity.ts.
@@ -68,11 +69,35 @@ async function run(channel: string, threadTs: string, opts: { force?: boolean })
 
     const permalink = await slack.getPermalink(channel, threadTs);
 
-    // No local database — Discourse (or the local file, in fallback mode)
-    // is the source of truth for "has this thread already been archived."
-    const existing = config.discourseEnabled
-      ? await discourse.findTopicByPermalink(permalink)
-      : fileKb.findEntry(channel, threadTs);
+    // Discourse mode: Turso (`kb_threads` table) is the source of truth for
+    // "has this thread already been archived." Fallback (file) mode: the
+    // local file's own embedded marker plays that role instead.
+    let existing: { previousBody: string; lastMessageTs: string; topicId?: number } | null = null;
+    if (config.discourseEnabled) {
+      const mapping = await db.getThreadMapping(channel, threadTs);
+      if (mapping) {
+        try {
+          existing = {
+            previousBody: await discourse.getTopicBody(mapping.topicId),
+            lastMessageTs: mapping.lastMessageTs,
+            topicId: mapping.topicId,
+          };
+        } catch (err) {
+          // The mapped topic is gone (deleted outside `yarn delete-topics`,
+          // e.g. via the Discourse UI directly) — the mapping is stale.
+          // Self-heal by dropping it and falling through to create a fresh
+          // topic, rather than failing this and every future trigger on the
+          // thread until someone manually cleans up Turso.
+          if (!discourse.isNotFoundError(err)) throw err;
+          console.warn(
+            `kb-connector: mapped topic ${mapping.topicId} no longer exists, dropping stale mapping`
+          );
+          await db.deleteMappingsByTopicId(mapping.topicId);
+        }
+      }
+    } else {
+      existing = fileKb.findEntry(channel, threadTs);
+    }
 
     if (existing) {
       await runUpdate(channel, threadTs, messages, existing, opts);
@@ -125,7 +150,15 @@ async function runNewThread(
   }
 
   if (config.discourseEnabled) {
-    const { topicUrl } = await discourse.createTopic(title, body_markdown, lastMessageTs, permalink);
+    const { topicId, topicUrl } = await discourse.createTopic(
+      title,
+      body_markdown,
+      channel,
+      threadTs,
+      lastMessageTs,
+      permalink
+    );
+    await db.insertNewMapping(channel, threadTs, topicId, topicUrl, lastMessageTs);
     console.log(`kb-connector: posted to Discourse — ${topicUrl}`);
     await slack.postMessage(channel, threadTs, `Posted to KB: ${topicUrl}`);
   } else {
@@ -139,7 +172,7 @@ async function runUpdate(
   channel: string,
   threadTs: string,
   allMessages: any[],
-  existing: discourse.TopicContext | fileKb.FileEntryContext,
+  existing: { previousBody: string; lastMessageTs: string; topicId?: number },
   opts: { force?: boolean }
 ) {
   const delta = allMessages.filter(
@@ -180,8 +213,18 @@ async function runUpdate(
   }
 
   if (config.discourseEnabled) {
-    const context = existing as discourse.TopicContext;
-    const topicUrl = await discourse.createReply(context.topicId, additionMarkdown, newLastMessageTs);
+    if (existing.topicId === undefined) {
+      throw new Error("expected existing.topicId to be set in Discourse mode");
+    }
+    const topicId = existing.topicId;
+    const topicUrl = await discourse.createReply(
+      topicId,
+      additionMarkdown,
+      channel,
+      threadTs,
+      newLastMessageTs
+    );
+    await db.updateMapping(channel, threadTs, topicId, topicUrl, newLastMessageTs);
     console.log(`kb-connector: appended reply to Discourse — ${topicUrl}`);
     await slack.postMessage(channel, threadTs, `Added to existing KB topic: ${topicUrl}`);
   } else {
