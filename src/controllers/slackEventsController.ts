@@ -65,7 +65,7 @@ export async function handleSlackEvent(
   // click, shortcut) can. When the thread has attachments, post a button;
   // its click carries a trigger_id that opens the same attachment-choice
   // modal used by the message shortcut.
-  const { images, files } = await getNewThreadAttachments(channel, threadTs);
+  const { messages, images, files } = await getNewThreadAttachments(channel, threadTs);
   if (images.length > 0 || files.length > 0) {
     await slack.postMessage(channel, threadTs, "This thread has attachments.", [
       { type: "section", text: { type: "mrkdwn", text: "This thread has attachments. Include them in the KB post?" } },
@@ -91,5 +91,5 @@ export async function handleSlackEvent(
     return;
   }
 
-  await runKbSummary(channel, threadTs);
+  await runKbSummary(channel, threadTs, { messages });
 }

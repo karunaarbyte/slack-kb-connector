@@ -176,7 +176,7 @@ export async function handleSlackInteractivity(
   // Checking for attachments means fetching the thread before we can ack —
   // trigger_id is only valid ~3s, so this has to stay fast (a single
   // conversations.replies call, no summarization work yet).
-  const { images, files } = await getNewThreadAttachments(channel, threadTs);
+  const { messages, images, files } = await getNewThreadAttachments(channel, threadTs);
 
   if ((images.length > 0 || files.length > 0) && triggerId) {
     res.status(200).send("");
@@ -187,5 +187,5 @@ export async function handleSlackInteractivity(
   // No attachments (or no trigger_id, e.g. in tests) — proceed exactly as
   // before with no attachment prompt.
   res.status(200).send("");
-  await runKbSummary(channel, threadTs);
+  await runKbSummary(channel, threadTs, { messages });
 }

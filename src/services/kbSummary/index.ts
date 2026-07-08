@@ -17,6 +17,16 @@ export interface RunOptions {
   // The user's images/files choice from the "post to KB?" modal (only asked
   // when the thread has any attachments since the last summary).
   attachments?: AttachmentChoice;
+  // Already-fetched thread messages, if the caller just called
+  // getNewThreadAttachments (which fetches the whole thread to check for
+  // attachments) — avoids fetching the same thread from Slack twice on the
+  // common no-attachments path. Omitted on the force-summarize/modal-submit
+  // paths, where the original fetch happened on an earlier HTTP request and
+  // is no longer available. Trade-off: a message posted in the brief window
+  // between that fetch and this call won't be included — negligible in
+  // practice since both happen within the same request's handling, but a
+  // real (if tiny) staleness window, not a full substitute for re-fetching.
+  messages?: SlackMessage[];
 }
 
 export async function runKbSummary(
@@ -43,7 +53,7 @@ async function run(channel: string, threadTs: string, opts: RunOptions) {
   );
 
   try {
-    const messages = await slack.fetchThread(channel, threadTs);
+    const messages = opts.messages ?? (await slack.fetchThread(channel, threadTs));
     console.log(`kb-connector: fetched ${messages.length} message(s)`);
 
     // A lone message (no replies) isn't a thread — skip it rather than
@@ -65,9 +75,12 @@ async function run(channel: string, threadTs: string, opts: RunOptions) {
       await runNewThread(channel, threadTs, messages, opts, permalink);
     }
   } catch (err: any) {
+    // Full error detail (which can include internal API paths/payloads)
+    // goes to the server log only — anyone in the Slack channel can read
+    // the reply, so it gets a generic notice instead.
     console.error("kb-connector: run failed —", err?.response?.data || err);
     await slack
-      .postMessage(channel, threadTs, `Failed to post to KB: ${err.message}`)
+      .postMessage(channel, threadTs, "Failed to post to KB. Check the connector logs for details.")
       .catch(() => {});
   }
 }

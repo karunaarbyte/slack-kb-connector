@@ -12,15 +12,17 @@ A Slack bot that turns thread discussions into knowledge-base articles. Point it
 - **Guards against noise**: won't generate a KB topic from a single message or an empty thread; ignores bot messages and edits.
 - **Completeness gate**: before archiving, an OpenAI call judges whether the thread is conclusive enough to be worth a KB entry. If not, it posts a notice with a "Summarize Anyway" button to force it through.
 - **Re-triggering an already-archived thread appends, not duplicates**: if a thread gets summarized again after more discussion, the connector finds the existing topic and posts just what's new as a reply — it doesn't create a second topic. A second completeness-style check judges whether the new activity is actually worth adding before posting.
+- **Optional image/file uploads (Discourse mode only)**: if the messages since the last summary (or, for a new thread, the whole thread) include any Slack attachments, the bot asks — via a "Choose attachments…" button and modal, or a "No attachments" shortcut button — whether to download and re-upload images and/or files into the Discourse post. Already-archived attachments aren't re-prompted on a later trigger.
 
 ## How it works
 
 1. A thread gets flagged — either the `kb!` trigger or the message shortcut — and Slack sends the request to the connector, signature-verified against the app's signing secret.
-2. The connector fetches the full thread via Slack's API and builds a transcript.
+2. The connector fetches the full thread via Slack's API and builds a transcript (see `docs/SLACK_SERVICE.md` for how `src/services/slack/` is organized).
 3. It checks whether this thread already has a KB entry. In Discourse mode, a local SQLite table maps `(channel, thread_ts) -> (topic_id, last_message_ts)` — a direct lookup, no searching post content. In fallback (file) mode, `kb-summaries.md` embeds its own marker per entry and is searched directly. See `docs/SCALING.md` for more on this design and its limits.
 4. **New thread**: the transcript goes to OpenAI, which judges whether it's conclusive enough and, if so, returns a structured title + markdown body. **Already-archived thread**: only the messages since the last summary are sent, along with the existing article, and OpenAI judges whether they add anything worth appending.
-5. The result is posted as a new Discourse topic, a reply on the existing one, or saved locally — with a link back to the original Slack thread.
-6. The bot replies in-thread with the result (or, if the content isn't judged worth archiving, a button to force it through anyway).
+5. **Attachments (Discourse mode only)**: if any images/files were shared since the last summary, the bot prompts for what to include before posting — a modal with independent "Images" / "Files" checkboxes (opened via a "Choose attachments…" button), or a "No attachments" button to skip straight through. Chosen files are downloaded from Slack (`url_private`, needs the `files:read` bot scope) and re-uploaded to Discourse (`/uploads.json`), then embedded as markdown in the post body. A failed upload for one file is logged and skipped rather than blocking the KB post. Threads with no attachments skip this prompt entirely.
+6. The result is posted as a new Discourse topic, a reply on the existing one, or saved locally — with a link back to the original Slack thread.
+7. The bot replies in-thread with the result (or, if the content isn't judged worth archiving, a button to force it through anyway).
 
 Note: this intentionally isn't a real Slack slash command. Slack blocks slash commands from being run inside a thread-reply composer, so there'd be no way to target a specific thread with one. The message shortcut is Slack's native mechanism for "act on this specific message," and it works fine from inside threads.
 
@@ -48,12 +50,13 @@ Bot Token Scopes required:
 | `channels:read`, `groups:read` | Generate permalinks for public/private channels |
 | `chat:write` | Post the summary confirmation reply |
 | `users:read` | Resolve user IDs to display names in the transcript |
+| `files:read` | Download attached images/files from Slack (`url_private`) when the user opts in to uploading them to the KB |
 
 Other app dashboard setup, beyond scopes:
 
 | Section | What's configured |
 |---|---|
-| Interactivity & Shortcuts | Toggled on; Request URL → `/slack/interactivity`. Message shortcut created ("On messages"), callback ID `kb_summarize` (must match `CALLBACK_ID` in `src/routes/slackInteractivity.ts`) |
+| Interactivity & Shortcuts | Toggled on; Request URL → `/slack/interactivity`. Message shortcut created ("On messages"), callback ID `kb_summarize` (must match `CALLBACK_ID` in `src/controllers/slackInteractivityController.ts`). No extra dashboard config needed for the attachment-choice modal/buttons — they're opened dynamically at runtime against the same Request URL |
 | Event Subscriptions | Toggled on; Request URL → `/slack/events`. Subscribed to bot event `message.channels` (and `message.groups` for private channels) |
 | OAuth & Permissions | Install/reinstall to workspace after any scope change → yields `SLACK_BOT_TOKEN` |
 | Basic Information | App Credentials → Signing Secret → `SLACK_SIGNING_SECRET` |
@@ -72,6 +75,12 @@ For development, skip the build step and run directly against source with live r
 
 ```
 yarn dev   # tsx watch src/index.ts
+```
+
+Run the test suite (vitest) with:
+
+```
+yarn test
 ```
 
 Needs a public HTTPS endpoint — Slack calls in via webhook for both the thread-message trigger and the message shortcut. Any small VM/container/PaaS works; it's a plain Express app with no special infra requirements. For local dev, tunnel with `ngrok http 3000` and point the Slack app's Request URLs at the ngrok host.
