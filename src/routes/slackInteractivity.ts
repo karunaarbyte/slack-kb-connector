@@ -1,6 +1,7 @@
 import express from "express";
 import { verifySlackRequest } from "../utils/verifySlackSignature";
-import { runKbSummary, FORCE_SUMMARIZE_ACTION } from "../services/kbSummary";
+import { runKbSummary } from "../services/kbSummary";
+import { FORCE_SUMMARIZE_ACTION } from "../constants/slackActions";
 import * as slack from "../services/slack";
 
 const router = express.Router();
