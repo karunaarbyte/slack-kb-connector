@@ -86,6 +86,27 @@ export async function getTopicBody(topicId: number): Promise<string> {
     .trim();
 }
 
+// Same axios client as every other call in this module — axios (>=1.4) has
+// native spec-compliant FormData/Blob support on Node, so no separate HTTP
+// client is needed just for this one multipart call.
+export async function uploadFile(
+  buffer: Buffer,
+  filename: string,
+  mimetype: string
+): Promise<{ url: string }> {
+  const form = new FormData();
+  form.append("file", new Blob([buffer], { type: mimetype }), filename);
+  form.append("type", "composer");
+
+  // Override the client's default "Content-Type: application/json" — axios
+  // sets the correct multipart boundary header itself once it detects a
+  // FormData body, but only if we don't pin it to JSON first.
+  const resp = await client.post("/uploads.json", form, {
+    headers: { "Content-Type": undefined },
+  });
+  return { url: resp.data.url };
+}
+
 export function isNotFoundError(err: any): boolean {
   return err?.response?.status === 404;
 }
