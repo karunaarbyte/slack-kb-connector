@@ -1,10 +1,8 @@
-import { WebClient } from "@slack/web-api";
-import config from "../config";
+import { client } from "./client";
+import type { SlackMessage } from "./attachments";
 
-const client = new WebClient(config.slackBotToken);
-
-export async function fetchThread(channel: string, threadTs: string) {
-  const messages: any[] = [];
+export async function fetchThread(channel: string, threadTs: string): Promise<SlackMessage[]> {
+  const messages: SlackMessage[] = [];
   let cursor: string | undefined;
 
   do {
@@ -14,7 +12,7 @@ export async function fetchThread(channel: string, threadTs: string) {
       cursor,
       limit: 200,
     });
-    messages.push(...(resp.messages || []));
+    messages.push(...((resp.messages || []) as SlackMessage[]));
     cursor = resp.response_metadata?.next_cursor || undefined;
   } while (cursor);
 
@@ -67,7 +65,7 @@ function cleanSlackLinks(text: string): string {
   );
 }
 
-function extractMessageText(msg: any): string {
+function extractMessageText(msg: SlackMessage): string {
   const parts: string[] = [];
 
   const primary = cleanSlackLinks((msg.text || "").trim() || textFromBlocks(msg.blocks).trim());
@@ -93,7 +91,7 @@ function extractMessageText(msg: any): string {
   return parts.join("\n").trim();
 }
 
-export async function threadToTranscript(messages: any[]): Promise<string> {
+export async function threadToTranscript(messages: SlackMessage[]): Promise<string> {
   const lines: string[] = [];
   for (const msg of messages) {
     if (msg.bot_id || msg.subtype) continue;
@@ -103,43 +101,4 @@ export async function threadToTranscript(messages: any[]): Promise<string> {
     lines.push(`${name}: ${text}`);
   }
   return lines.join("\n");
-}
-
-export async function postMessage(
-  channel: string,
-  threadTs: string,
-  text: string,
-  blocks?: any[]
-) {
-  await client.chat.postMessage({
-    channel,
-    thread_ts: threadTs,
-    text,
-    blocks,
-  });
-}
-
-export async function deleteMessage(channel: string, messageTs: string) {
-  await client.chat.delete({ channel, ts: messageTs });
-}
-
-// Slack buttons have no built-in "disabled" state — replacing the message's
-// blocks is the standard way to retire a button once it's been acted on.
-export async function updateMessage(
-  channel: string,
-  messageTs: string,
-  text: string,
-  blocks?: any[]
-) {
-  await client.chat.update({
-    channel,
-    ts: messageTs,
-    text,
-    blocks,
-  });
-}
-
-export async function getPermalink(channel: string, messageTs: string): Promise<string> {
-  const resp = await client.chat.getPermalink({ channel, message_ts: messageTs });
-  return resp.permalink as string;
 }
